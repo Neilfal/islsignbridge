@@ -1,0 +1,7 @@
+view,model,LOSO_accuracy,LOSO_macro_F1,worst_signer_acc,best_signer_acc,random_split_accuracy
+flat,RandomForest,0.884,0.883,0.556,1.0,0.942
+flat,SVM-RBF,0.795,0.801,0.296,0.889,0.874
+flat,LogReg,0.842,0.839,0.444,0.963,0.937
+pooled,RandomForest,0.784,0.767,0.519,0.926,0.921
+pooled,SVM-RBF,0.711,0.703,0.407,0.889,0.9
+pooled,LogReg,0.805,0.805,0.556,1.0,0.932

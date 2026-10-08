@@ -1,0 +1,10 @@
+,Hello,How are you,Alright,Good Morning,Good afternoon,Good evening,Good night,Thank you,Pleased
+Hello,19,0,0,1,1,0,0,0,0
+How are you,0,20,1,0,0,0,0,0,0
+Alright,0,0,18,0,0,0,0,0,3
+Good Morning,0,2,0,15,0,1,3,0,0
+Good afternoon,0,1,0,0,20,0,0,1,0
+Good evening,0,2,0,1,0,18,0,0,0
+Good night,1,1,0,2,0,0,16,1,0
+Thank you,0,0,0,0,0,0,0,21,0
+Pleased,0,0,0,0,0,0,0,0,21

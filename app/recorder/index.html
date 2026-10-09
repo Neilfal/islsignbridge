@@ -1,0 +1,175 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--line:rgba(255,255,255,.09);--text:#E8ECF8;--muted:#9AA6C4;--rec:#FF6B81}
+*{box-sizing:border-box}
+html,body{margin:0;background:transparent;color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{border:1px solid var(--line);border-radius:20px;background:linear-gradient(180deg,#131C33,#0E1527);padding:14px}
+.stage{position:relative;aspect-ratio:16/9;background:#05070E;border-radius:14px;overflow:hidden}
+video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:none}
+.placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;color:var(--muted);text-align:center;padding:16px;font-size:14px;line-height:1.5}
+.placeholder b{color:var(--text);font-weight:600;font-size:15px}
+.count{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:110px;font-weight:600;color:#fff;text-shadow:0 4px 30px rgba(0,0,0,.6);background:rgba(5,7,14,.35)}
+.badge{position:absolute;top:12px;left:12px;display:none;align-items:center;gap:8px;background:rgba(5,7,14,.7);padding:6px 12px;border-radius:999px;font-size:13px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--rec);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.bar{height:4px;background:rgba(255,255,255,.08);border-radius:4px;margin-top:12px;overflow:hidden}
+.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#8FB6FF,#B79CFF)}
+.row{display:flex;gap:10px;margin-top:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.status{font-size:13px;color:var(--muted);min-height:20px}
+.btns{display:flex;gap:8px}
+button{font:inherit;font-size:14px;font-weight:600;border:1px solid var(--line);border-radius:12px;padding:10px 18px;cursor:pointer;color:var(--text);background:rgba(255,255,255,.05);transition:transform .08s,background .2s}
+button:hover{background:rgba(255,255,255,.1)}
+button:active{transform:scale(.97)}
+button.primary{border:0;color:#0B1020;background:linear-gradient(120deg,#8FB6FF,#B79CFF)}
+button.primary:hover{filter:brightness(1.08)}
+button.stop{border:0;color:#fff;background:linear-gradient(120deg,#FF6B81,#FF8F6B)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="stage">
+    <video id="vid" autoplay muted playsinline></video>
+    <div class="placeholder" id="ph"><b>Camera is off</b><span>Press Start camera and allow access when your browser asks.<br>Stand back so both shoulders and both hands are visible.</span></div>
+    <div class="count" id="count"></div>
+    <div class="badge" id="badge"><span class="dot"></span><span id="timer">REC 0.0s</span></div>
+  </div>
+  <div class="bar"><i id="prog"></i></div>
+  <div class="row">
+    <div class="status" id="status">Your video never leaves this page except to be analysed.</div>
+    <div class="btns">
+      <button class="primary" id="bStart">Start camera</button>
+      <button class="primary" id="bRec" hidden>Record a sign</button>
+      <button class="stop" id="bStop" hidden>Stop</button>
+      <button id="bCancel" hidden>Cancel</button>
+      <button id="bOff" hidden>Turn off camera</button>
+    </div>
+  </div>
+</div>
+<script>
+const S = {
+  ready(){ window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:componentReady",apiVersion:1},"*"); },
+  height(h){ window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:setFrameHeight",height:h},"*"); },
+  value(v){ window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:setComponentValue",value:v,dataType:"json"},"*"); }
+};
+let cfg = {max_seconds: 5, countdown: 3};
+window.addEventListener("message", ev => {
+  if (ev.data && ev.data.type === "streamlit:render") cfg = Object.assign(cfg, ev.data.args || {});
+});
+
+const $ = id => document.getElementById(id);
+const vid = $("vid"), ph = $("ph"), count = $("count"), badge = $("badge"), timer = $("timer");
+const prog = $("prog"), statusEl = $("status");
+const bStart = $("bStart"), bRec = $("bRec"), bStop = $("bStop"), bCancel = $("bCancel"), bOff = $("bOff");
+let stream = null, recorder = null, chunks = [], mime = "", cdTimer = null, recTimer = null, t0 = 0;
+
+function show(state){
+  bStart.hidden = state !== "off";
+  bRec.hidden = !(state === "ready" || state === "sent");
+  bRec.textContent = state === "sent" ? "Record again" : "Record a sign";
+  bStop.hidden = state !== "recording";
+  bCancel.hidden = state !== "countdown";
+  bOff.hidden = !(state === "ready" || state === "sent");
+  vid.style.display = state === "off" ? "none" : "block";
+  ph.hidden = state !== "off";
+  count.style.display = state === "countdown" ? "flex" : "none";
+  badge.style.display = state === "recording" ? "flex" : "none";
+  if (state !== "recording") prog.style.width = "0";
+}
+function say(t){ statusEl.textContent = t; }
+
+function pickMime(){
+  const list = ["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm","video/mp4"];
+  if (!window.MediaRecorder) return "";
+  return list.find(m => MediaRecorder.isTypeSupported(m)) || "";
+}
+
+async function startCamera(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},facingMode:"user"},audio:false});
+    vid.srcObject = stream;
+    mime = pickMime();
+    if (!window.MediaRecorder){ say("This browser cannot record video. Please use the Upload tab instead."); }
+    else say("Camera ready. Press Record a sign.");
+    show("ready");
+  }catch(e){
+    say("Could not open the camera (" + (e.name || "error") + "). Allow camera access, or use the Upload tab.");
+    show("off");
+  }
+}
+function stopCamera(){
+  if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+  vid.srcObject = null;
+  say("Camera turned off.");
+  show("off");
+}
+
+function beginCountdown(){
+  if (!window.MediaRecorder){ say("This browser cannot record video. Please use the Upload tab instead."); return; }
+  let n = Math.max(0, Math.round(cfg.countdown));
+  if (n === 0){ startRecording(); return; }
+  count.textContent = n; show("countdown"); say("Get ready...");
+  cdTimer = setInterval(() => {
+    n -= 1;
+    if (n <= 0){ clearInterval(cdTimer); cdTimer = null; startRecording(); }
+    else count.textContent = n;
+  }, 1000);
+}
+function cancelCountdown(){
+  if (cdTimer){ clearInterval(cdTimer); cdTimer = null; }
+  say("Cancelled."); show("ready");
+}
+
+function startRecording(){
+  chunks = [];
+  try{
+    recorder = new MediaRecorder(stream, mime ? {mimeType: mime, videoBitsPerSecond: 2000000} : undefined);
+  }catch(e){ say("Recording is not supported here. Please use the Upload tab."); show("ready"); return; }
+  recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  recorder.onstop = finalize;
+  recorder.start();
+  t0 = performance.now();
+  show("recording"); say("Recording... make your sign.");
+  recTimer = setInterval(() => {
+    const s = (performance.now() - t0) / 1000;
+    timer.textContent = "REC " + s.toFixed(1) + "s";
+    prog.style.width = Math.min(100, s / cfg.max_seconds * 100) + "%";
+    if (s >= cfg.max_seconds) stopRecording();
+  }, 100);
+}
+function stopRecording(){
+  if (recTimer){ clearInterval(recTimer); recTimer = null; }
+  if (recorder && recorder.state !== "inactive") recorder.stop();
+}
+function finalize(){
+  const seconds = (performance.now() - t0) / 1000;
+  const type = (recorder && recorder.mimeType) || mime || "video/webm";
+  const blob = new Blob(chunks, {type});
+  if (seconds < 0.8 || !blob.size){ say("That was too short. Try again."); show("ready"); return; }
+  const fr = new FileReader();
+  fr.onload = () => {
+    const b64 = String(fr.result).split(",")[1];
+    S.value({id: Date.now(), mime: type, b64: b64, seconds: seconds});
+    say("Clip captured. Analysing below...");
+    show("sent");
+  };
+  fr.readAsDataURL(blob);
+}
+
+bStart.onclick = startCamera;
+bRec.onclick = beginCountdown;
+bStop.onclick = stopRecording;
+bCancel.onclick = cancelCountdown;
+bOff.onclick = stopCamera;
+
+show("off");
+S.ready();
+new ResizeObserver(() => S.height($("wrap").offsetHeight + 6)).observe($("wrap"));
+S.height($("wrap").offsetHeight + 6);
+</script>
+</body>
+</html>

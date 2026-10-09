@@ -108,6 +108,7 @@ def recognize(bundle, hands_list, pose_list, aspect, threshold):
         "confidence": top[0][1],
         "confident": top[0][1] >= threshold,
         "top3": top,
+        "all": [(bundle["names"][int(classes[i])], float(proba[i])) for i in order],
         "hand_fraction": float(seen),
     }
 

@@ -2,7 +2,7 @@
 
 Recognises Indian Sign Language (ISL) greeting words from a camera or a short video clip. A college project.
 
-**Live demo:** https://YOUR-APP-NAME.streamlit.app
+**Live demo:** https://isltext.streamlit.app/
 
 It knows nine words: Hello, How are you, Alright, Good Morning, Good afternoon, Good evening, Good night, Thank you, Pleased.
 
